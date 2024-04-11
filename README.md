@@ -7,7 +7,7 @@ Docker compose version at least 1.22.0
 
 # Getting started
 
-`git clone git@gitlab.sun-asterisk.com:viblo/viblo-docker-development.git`
+`git clone git@github.com:hoangbh-0986/viblo-docker-development.git`
 
 # Add hosts
 
