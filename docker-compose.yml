@@ -1,0 +1,249 @@
+version: '2.2'
+
+networks:
+  default:
+    name: viblo
+
+services:
+  traefik:
+    image: traefik:2.8
+    restart: unless-stopped
+    command:
+      - --api.dashboard=true
+      - --entrypoints.http.address=:80
+      - --providers.docker
+      - --providers.docker.network=${COMPOSE_PROJECT_NAME}_frontend
+      - --providers.docker.watch=true
+      - --providers.docker.exposedbydefault=false
+    ports:
+      - ${PORT:-80}:80
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik.rule=Host(`${TRAEFIK_DOMAIN}`)
+      - traefik.http.routers.traefik.service=api@internal
+      - traefik.http.middlewares.traefik-dashboard.redirectRegex.regex=/
+      - traefik.http.middlewares.traefik-dashboard.redirectRegex.replacement=/dashboard/
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  php:
+    image: ghcr.io/sun-asterisk-research/php-dev:8.1
+    restart: unless-stopped
+    working_dir: /srv/app
+    environment:
+      DOCUMENT_ROOT: /srv/app/public
+    volumes:
+      - ${PATH_PHP}:/srv/app
+      - ${HOSTS_FILE}:/etc/hosts
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-api.loadbalancer.server.port=80
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-api.middlewares=strip-api
+      - traefik.http.middlewares.strip-api.stripprefix.prefixes=/api
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-api.rule=Host(`${DOMAIN}`) && (PathPrefix(`/api`))
+      - traefik.http.routers.telescope.rule=Host(`${DOMAIN}`) && PathPrefix(`${API_PATH_PREFIX:-/telescope}`)
+      - traefik.http.routers.telescope-vendor.rule=Host(`${DOMAIN}`) && PathPrefix(`${TELESCOPE_PATH_PREFIX:-/vendor/telescope}`)
+      - traefik.http.routers.debugbar.rule=Host(`${DOMAIN}`) && PathPrefix(`${DEBUG_PATH_PREFIX:-/_debugbar}`)
+
+  php-subdomain:
+    image: ghcr.io/sun-asterisk-research/php-dev:8.1
+    restart: unless-stopped
+    working_dir: /srv/app
+    environment:
+      DOCUMENT_ROOT: /srv/app/public
+    volumes:
+      - ${PATH_PHP}:/srv/app
+      - ${HOSTS_FILE}:/etc/hosts
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-api-subdomain.loadbalancer.server.port=80
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-api-subdomain.middlewares=strip-api
+      - traefik.http.middlewares.strip-api.stripprefix.prefixes=/api
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-api-subdomain.rule=Host(`${SUBDOMAIN}`) && (PathPrefix(`/api`))
+      - traefik.http.routers.telescope.rule=Host(`${SUBDOMAIN}`) && PathPrefix(`${API_PATH_PREFIX:-/telescope}`)
+      - traefik.http.routers.telescope-vendor.rule=Host(`${SUBDOMAIN}`) && PathPrefix(`${TELESCOPE_PATH_PREFIX:-/vendor/telescope}`)
+      - traefik.http.routers.debugbar.rule=Host(`${SUBDOMAIN}`) && PathPrefix(`${DEBUG_PATH_PREFIX:-/_debugbar}`)
+
+  php-profile-subdomain:
+    image: ghcr.io/sun-asterisk-research/php-dev:8.1
+    restart: unless-stopped
+    working_dir: /srv/app
+    environment:
+      DOCUMENT_ROOT: /srv/app/public
+    volumes:
+      - ${PATH_PHP}:/srv/app
+      - ${HOSTS_FILE}:/etc/hosts
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-api-profile-subdomain.loadbalancer.server.port=80
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-api-profile-subdomain.middlewares=strip-api
+      - traefik.http.middlewares.strip-api.stripprefix.prefixes=/api
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-api-profile-subdomain.rule=Host(`${PROFILESUBDOMAIN}`) && (PathPrefix(`/api`))
+      - traefik.http.routers.telescope.rule=Host(`${PROFILESUBDOMAIN}`) && PathPrefix(`${API_PATH_PREFIX:-/telescope}`)
+      - traefik.http.routers.telescope-vendor.rule=Host(`${PROFILESUBDOMAIN}`) && PathPrefix(`${TELESCOPE_PATH_PREFIX:-/vendor/telescope}`)
+      - traefik.http.routers.debugbar.rule=Host(`${PROFILESUBDOMAIN}`) && PathPrefix(`${DEBUG_PATH_PREFIX:-/_debugbar}`)
+
+  web:
+    image: node:12
+    restart: unless-stopped
+    tty: true
+    working_dir: /srv/web
+    volumes:
+      - ${PATH_WEB}:/srv/web
+      - ${HOSTS_FILE}:/etc/hosts
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-web.rule=Host(`${DOMAIN}`)
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-web.loadbalancer.server.port=3000
+
+  web-subdomain:
+    image: node:12
+    restart: unless-stopped
+    tty: true
+    working_dir: /srv/web
+    volumes:
+      - ${PATH_WEB}:/srv/web
+      - ${HOSTS_FILE}:/etc/hosts
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-web-subdomain.rule=Host(`${SUBDOMAIN}`)
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-web-subdomain.loadbalancer.server.port=3000
+
+  profie-subdomain:
+    image: node:12
+    restart: unless-stopped
+    tty: true
+    working_dir: /srv/web
+    volumes:
+      - ${PATH_WEB}:/srv/web
+      - ${HOSTS_FILE}:/etc/hosts
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-profie-subdomain.rule=Host(`${PROFILESUBDOMAIN}`)
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-profie-subdomain.loadbalancer.server.port=3000
+
+  admin:
+    image: node:9-alpine
+    restart: unless-stopped
+    tty: true
+    working_dir: /srv/admin
+    volumes:
+      - ${PATH_ADMIN}:/srv/admin
+      - ${HOSTS_FILE}:/etc/hosts
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.admin.rule=Host(`${DOMAIN}`) && PathPrefix(`${PATH_PREFIX:-/admin}`)
+      - traefik.http.middlewares.admin.stripprefix.prefixes=/admin
+      - traefik.http.services.admin.loadbalancer.server.port=3000
+
+  redis:
+    image: redis:7.0-alpine
+    restart: unless-stopped
+    volumes:
+      - ${PATH_DATA:-./data}/redis:/data
+
+  postgres_test:
+    image: postgres:13-alpine
+    restart: always
+    volumes:
+      - ${PATH_DATA:-./data}/postgres-test:/var/lib/postgresql/data-test
+    environment:
+      POSTGRES_DB: viblo_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+  postgres:
+    image: postgres:13-alpine
+    restart: always
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-4G}
+    volumes:
+      - ${PATH_DATA:-./data}/postgres:/var/lib/postgresql/data
+    ports:
+      - ${DB_PORT:-5432}:5432
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+
+  elasticsearch:
+    image: docker.io/viblo/elasticsearch:bitnami-5.3.1-r0
+    restart: always
+    environment:
+    #   - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms${MEMORY_LIMIT_ELASTICSEARCH:-512m} -Xmx${MEMORY_LIMIT_ELASTICSEARCH:-512m}
+    volumes:
+      - ${PATH_DATA:-./data}/elasticsearch:/usr/share/elasticsearch/data
+
+  renderer:
+    image: harbor.sun-asterisk.vn/vibloplatform/viblo/contents-server:latest
+    environment:
+      APP_URL: http://${DOMAIN}:{PORT}
+      API_URL: http:/php/api
+      IMAGES_URL: https://images.viblo.asia
+    labels:
+      - traefik.enable=true
+      - traefik.port=3000
+      - traefik.http.routers.contents.rule=Host(`${DOMAIN}`) && Path(`/posts/{hashId}/contents`)
+      - traefik.http.routers.prerender.rule=Host(`${DOMAIN}`) && PathPrefix(`/prerender`)
+      - traefik.http.routers.embed.rule=Host(`${DOMAIN}`) && PathPrefix(`/embed`)
+
+  laravel-echo-server:
+    image: sunasteriskrnd/laravel-echo-server:latest
+    restart: always
+    labels:
+      - traefik.enable=true
+      - traefik.port=6001
+      - traefik.http.routers.laravel-echo.rule=Host(`${DOMAIN}`) && PathPrefix(`/socket.io`)
+      - traefik.http.services.laravel-echo.loadbalancer.server.port=6001
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_KEY_PREFIX=${LARAVEL_ECHO_SERVER_REDIS_KEY_PREFIX}
+      - NODE_ENV=development
+      - AUTH_HOST=http://api:80
+      - AUTH_ENDPOINT=/broadcasting/auth
+      - DEV_MODE=false
+
+  # minio:
+  #   image: minio/minio:latest
+  #   restart: always
+  #   command:
+  #     - server
+  #     - /data
+  #   labels:
+  #     - traefik.enable=true
+  #     - traefik.http.routers.minio.rule=Host(`minio.${DOMAIN_SECONDARY}`)
+  #     - traefik.http.services.minio.loadbalancer.server.port=9000
+  #   environment:
+  #     MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minio}
+  #     MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-miniostorage}
+  #     MINIO_REGION_NAME: ${MINIO_REGION_NAME:-us-east-1}
+  #   volumes:
+  #     - ${PATH_DATA:-./data}/minio:/data
+
+  exporter:
+    image: node:12
+    restart: always
+    tty: true
+    working_dir: /srv/exporter
+    volumes:
+      - ${PATH_EXPORT}:/srv/exporter
+    environment:
+      - API_URL=http:/php/api
+  
+  matex:
+    image: harbor.sun-asterisk.vn/vibloplatform/ai-research/matex-api:latest
+    restart: always
+    labels:
+      - traefik.enable=true
+      - traefik.port=5000
+      - traefik.http.routers.matex-infra.rule=Host(`${DOMAIN}`) && Path(`/healthz`)
+      - traefik.http.routers.matex-app.rule=Host(`${DOMAIN}`) && PathPrefix(`/predict`)
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}-mailcatcher.rule=Host(`${MAILCATCHER_DOMAIN}`)
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}-mailcatcher.loadbalancer.server.port=1080
